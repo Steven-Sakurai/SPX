@@ -1,0 +1,125 @@
+---
+title: "SF Notebook"
+#output: html_notebook
+---
+
+```{r}
+setwd('/Users/steven/Desktop/DataCleaning/weekly_package/')
+source('functions.R')
+```
+
+### SF1 correlation between atm slope and convexity
+```{r}
+my_days = get_date()
+my_taus = get_tau()
+n1 = length(my_days)
+n2 = length(my_taus)
+
+atm.skew = get_atm_skew(k = 0, method = "natural")
+atm.convex = get_atm_convex(k = 0, method = "natural")
+
+skew.vec = as.vector(atm.skew)
+convex.vec = as.vector(atm.convex)
+# Remove outliers
+q.sk = quantile(skew.vec, probs = c(0.05, 0.95), na.rm = T)
+q.c = quantile(convex.vec, probs = c(0.05, 0.95), na.rm = T)
+
+Index = skew.vec < q.sk[1] | skew.vec > q.sk[2] | convex.vec < q.c[1] | convex.vec > q.c[2]
+skew.vec[Index] = NA
+convex.vec[Index] = NA
+
+################
+# how many groups to have
+n_group = 3
+group_names = paste("group", 1:n_group)
+n3 = floor(n2 / n_group)
+
+tau = c(rep(group_names[-n_group], each = n1*n3), rep(group_names[n_group], n1*(n2 - n3*(n_group - 1))))
+df.1 = data.frame(slope = skew.vec, convex = convex.vec, tau = tau)
+df.1 = df.1[complete.cases(df.1), ]
+df.1 %>% summarize(correlation = cor(slope, convex))
+```
+```{r}
+## calculate cor by group
+df.1 %>% 
+	group_by(tau) %>%
+	summarize(correlation = cor(slope, convex))
+```
+
+## Linear regression for the three groups respectively
+```{r}
+by(df.1, factor(df.1$tau), function(x) summary(lm(convex ~ slope, data = x)))
+```
+```{r}
+p1 = df.1 %>%
+	ggplot(aes(x = slope, y = convex))
+p1 = p1 + geom_point(size = 0.8) +
+	#xlim(-3, 0) + ylim(-600, 600) + 
+	facet_wrap('tau') + ylab('convexity')
+print(p1)
+ggsave(filename = "SF1.eps", width = 10, height = 4)
+```
+
+
+```{r}
+df.2 = get_df_k(k = 0, method = "natural")
+```
+```{r}
+slope_median = df.2 %>%
+    group_by(tau) %>%
+    summarise(median = median(slope))
+```
+
+```{r}
+fit = lm(log(-median) ~ log(tau), slope_median)
+summary(fit)
+```
+```{r}
+p2 = df.2 %>%
+	ggplot(aes(x = factor(tau), y = slope)) +
+	stat_summary(fun.data = by.vals, geom = 'boxplot', color = 'blue') +
+    geom_point(size = 1) +
+    xlab("tau")
+print(p2)
+ggsave('SF2.eps', p2, width = 7, height = 6)
+```
+
+
+```{r}
+df.3 = get_df_k(k = 0, method = "natural")
+df.3 = df.3 %>% 
+	mutate(tau_group = "default")
+
+my_days = get_date()
+my_taus = get_tau()
+n1 = length(my_days)
+n2 = length(my_taus)
+
+n_group = 3
+group_names = paste("group", 1:n_group)
+pivot = (1:(n_group-1))*floor(n2/n_group) 
+
+i = 1
+for(p in pivot) {
+	df.3 = df.3 %>%
+		mutate(tau_group = replace(tau_group, tau <= p, group_names[i]))
+	i = i + 1
+}
+df.3 = df.3 %>% 
+	mutate(tau_group = replace(tau_group, tau > my_taus[pivot[length(pivot)]], group_names[length(group_names)]))
+```
+
+```{r}
+p3 = df.3 %>% 
+	filter(slope < 5, slope > -7.5) %>%
+	ggplot(aes(x = level, y = slope)) +
+	geom_point(size = 0.4) + 
+	geom_smooth(method = "lm", formula = y ~ poly(x, 2)) +
+	facet_wrap(~ tau_group, scales = "free") + 
+	ylab('slope')
+print(p3)
+ggsave(filename = "SF3.eps", width = 10, height = 6)
+```
+
+
+
