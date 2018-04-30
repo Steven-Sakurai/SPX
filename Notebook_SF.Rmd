@@ -1,14 +1,14 @@
 ---
 title: "SF Notebook"
-#output: html_notebook
+output: html_notebook
 ---
 
 ```{r}
-setwd('/Users/steven/Desktop/DataCleaning/weekly_package/')
+setwd('/Users/steven/Desktop/DataCleaning/SPX/')
 source('functions.R')
 ```
 
-### SF1 correlation between atm slope and convexity
+# SF1 correlation between atm slope and convexity
 ```{r}
 my_days = get_date()
 my_taus = get_tau()
@@ -18,26 +18,30 @@ n2 = length(my_taus)
 atm.skew = get_atm_skew(k = 0, method = "natural")
 atm.convex = get_atm_convex(k = 0, method = "natural")
 
-skew.vec = as.vector(atm.skew)
-convex.vec = as.vector(atm.convex)
-# Remove outliers
-q.sk = quantile(skew.vec, probs = c(0.05, 0.95), na.rm = T)
-q.c = quantile(convex.vec, probs = c(0.05, 0.95), na.rm = T)
+skew.vec = as.vector(t(atm.skew))
+convex.vec = as.vector(t(atm.convex))
 
-Index = skew.vec < q.sk[1] | skew.vec > q.sk[2] | convex.vec < q.c[1] | convex.vec > q.c[2]
-skew.vec[Index] = NA
-convex.vec[Index] = NA
-
-################
 # how many groups to have
 n_group = 3
 group_names = paste("group", 1:n_group)
-n3 = floor(n2 / n_group)
+pivot = (1:(n_group-1))*floor(n2/n_group)
 
-tau = c(rep(group_names[-n_group], each = n1*n3), rep(group_names[n_group], n1*(n2 - n3*(n_group - 1))))
-df.1 = data.frame(slope = skew.vec, convex = convex.vec, tau = tau)
+levels = c(0, pivot, Inf)
+labels = group_names 
+group_names = paste("group", 1:n_group)
+n3 = floor(n2 / n_group)
+tau = rep(my_taus, n1)
+tau = cut(tau, levels, labels = labels)
+```
+
+```{r}
+a = 0.01
+b = 0.99
+df.1 = data.frame(slope = skew.vec, convex = convex.vec, tau = tau) %>% group_by(tau) %>% filter(slope > quantile(slope, probs = a, na.rm = T), slope < quantile(slope, probs = b, na.rm = T), convex > quantile(convex, probs = a, na.rm = T), convex < quantile(convex, probs = b, na.rm = T))
+#df.1 = data.frame(slope = skew.vec, convex = convex.vec, tau = tau)
+################
 df.1 = df.1[complete.cases(df.1), ]
-df.1 %>% summarize(correlation = cor(slope, convex))
+cor(df.1$slope, df.1$convex)
 ```
 ```{r}
 ## calculate cor by group
@@ -55,12 +59,12 @@ p1 = df.1 %>%
 	ggplot(aes(x = slope, y = convex))
 p1 = p1 + geom_point(size = 0.8) +
 	#xlim(-3, 0) + ylim(-600, 600) + 
-	facet_wrap('tau') + ylab('convexity')
+	facet_wrap(~ tau, scales = "free") + ylab('convexity')
 print(p1)
 ggsave(filename = "SF1.eps", width = 10, height = 4)
 ```
 
-
+# SF2 decay of slope w.r.t. tau
 ```{r}
 df.2 = get_df_k(k = 0, method = "natural")
 ```
@@ -71,11 +75,11 @@ slope_median = df.2 %>%
 ```
 
 ```{r}
-fit = lm(log(-median) ~ log(tau), slope_median)
-summary(fit)
+summary(lm(log(-median) ~ log(tau), slope_median))
 ```
 ```{r}
 p2 = df.2 %>%
+    filter(slope < 0) %>%
 	ggplot(aes(x = factor(tau), y = slope)) +
 	stat_summary(fun.data = by.vals, geom = 'boxplot', color = 'blue') +
     geom_point(size = 1) +
@@ -84,6 +88,7 @@ print(p2)
 ggsave('SF2.eps', p2, width = 7, height = 6)
 ```
 
+# SF3 level and slope
 
 ```{r}
 df.3 = get_df_k(k = 0, method = "natural")
@@ -97,29 +102,141 @@ n2 = length(my_taus)
 
 n_group = 3
 group_names = paste("group", 1:n_group)
-pivot = (1:(n_group-1))*floor(n2/n_group) 
+pivot = (1:(n_group-1))*floor(n2/n_group)
 
-i = 1
-for(p in pivot) {
-	df.3 = df.3 %>%
-		mutate(tau_group = replace(tau_group, tau <= p, group_names[i]))
-	i = i + 1
-}
+levels = c(0, pivot, Inf)
+labels = group_names 
+df.3 = df.3 %>% mutate(tau_group = cut(tau, levels, labels = labels))
+
 df.3 = df.3 %>% 
-	mutate(tau_group = replace(tau_group, tau > my_taus[pivot[length(pivot)]], group_names[length(group_names)]))
+    group_by(tau_group) %>%
+    filter(slope > quantile(slope, probs = 0.05, na.rm = T),
+           slope < quantile(slope, probs = 0.95, na.rm = T))
 ```
 
 ```{r}
-p3 = df.3 %>% 
-	filter(slope < 5, slope > -7.5) %>%
+df.3 %>%
+    group_by(tau_group) %>%
+    summarise(correlation = cor(level, slope))
+```
+
+
+```{r}
+p3 = df.3 %>%
 	ggplot(aes(x = level, y = slope)) +
-	geom_point(size = 0.4) + 
+	geom_point(size = 0.8) + 
 	geom_smooth(method = "lm", formula = y ~ poly(x, 2)) +
 	facet_wrap(~ tau_group, scales = "free") + 
 	ylab('slope')
 print(p3)
-ggsave(filename = "SF3.eps", width = 10, height = 6)
+ggsave(filename = "SF3.eps", width = 10, height = 4)
 ```
 
 
+# SF4 (time-scaled) convexity w.r.t. tau
+```{r}
+df.4 = get_df_k(k = 0, method = "natural")
+df.4 = df.4 %>%
+	group_by(tau) %>%
+    #filter(convexity > quantile(convexity, probs = 0.05, na.rm = T),
+    #       convexity < quantile(convexity, probs = 0.95, na.rm = T)) %>%
+    mutate(time_scaled_convexity = sqrt(tau/252.0)*convexity)
+```
 
+```{r}
+p4_1 = df.4 %>%
+    ggplot(aes(x = factor(tau), y = convexity)) +
+	stat_summary(fun.data = by.vals, geom = 'boxplot', color = 'blue') +
+    geom_point(size = 1) +
+    xlab("tau")
+print(p4_1)
+ggsave('SF4_1.eps', p4_1, width = 7, height = 6)
+```
+```{r}
+p4_2 = df.4 %>%
+    ggplot(aes(x = factor(tau), y = time_scaled_convexity)) +
+	stat_summary(fun.data = by.vals, geom = 'boxplot', color = 'blue') +
+    geom_point(size = 1) +
+    xlab("tau")
+print(p4_2)
+ggsave('SF4_2.eps', p4_2, width = 7, height = 6)
+```
+
+# SF5 atm term-structure slope and level
+```{r}
+level_mat = get_df_k_term_level_mat(0)
+tslope_mat = get_df_k_term_slope_mat(0)
+
+level.vec = as.vector(t(level_mat))
+tslope.vec = as.vector(t(tslope_mat))
+
+n_group = 3
+group_names = paste("group", 1:n_group)
+pivot = (1:(n_group-1))*floor(n2/n_group)
+
+levels = c(0, pivot, Inf)
+labels = group_names 
+group_names = paste("group", 1:n_group)
+n3 = floor(n2 / n_group)
+tau = rep(my_taus, n1)
+tau = cut(tau, levels, labels = labels)
+```
+
+```{r}
+df.5 = data.frame(tau = tau, level = level.vec, tslope = tslope.vec)
+df.5 %>%
+    group_by(tau) %>%
+    summarise(correlation = cor(level, tslope))
+```
+```{r}
+p5_1 = df.5 %>%
+    ggplot(aes(x = level, y = tslope)) + 
+    geom_point(size = 0.4) + 
+    stat_smooth(method = "lm", formula = y ~ poly(x, 2)) +
+    ylab('term-structure slope')
+print(p5_1)
+ggsave(filename = "SF5_1.eps", p5_1, width = 7, height = 6)
+```
+
+```{r}
+p5_2 = ggplot(df.5, aes(x = level, y = tslope)) +
+    geom_point(size = 0.4) + scale_colour_manual(values = c(2, 4, 1)) +
+    stat_smooth(method = "lm", formula = y ~ poly(x, 2)) +
+    ylab('term-structure slope') + 
+    facet_wrap(~ tau, scales = "free")
+print(p5_2)
+ggsave(filename = "SF5_2.eps", p5_2, width = 10, height = 4)
+```
+
+# SF6 term-structure slope and k
+```{r}
+t = 18
+k_seq = seq(-0.15, 0.05, 0.02)
+mat.6 = get_sf6(t = t, k_seq)
+```
+
+```{r}
+len_days = dim(mat.6)[1]
+a = 0.01
+b = 0.99
+df.6 = data.frame(tslope = as.vector(mat.6), k = rep(k_seq, each = len_days)) %>%
+    filter(tslope > quantile(tslope, probs = a, na.rm = T), 
+           tslope < quantile(tslope, probs = b, na.rm = T))
+
+p6 = ggplot(df.6, aes(x = factor(k), y = tslope)) + 
+    stat_summary(fun.data = by.vals, geom = 'boxplot', color = 'blue') + 
+    geom_point(size = 0.8) + xlab("k") + ylab("term structure slope") +
+    scale_x_discrete()
+print(p6)
+ggsave('SF6.eps', p6, width = 7, height = 6)
+```
+
+# SF 7
+```{r}
+df.7 = get_sf7(tau_seq = get_tau())
+```
+```{r}
+p7 = ggplot(df.7, aes(x = tau, y = k_min)) + stat_summary(fun.data = by.vals, geom = 'boxplot', color = 'blue') + geom_point(size = 0.2) 
+print(p7)
+ggsave('SF7.eps', p7, width = 7, height = 6)
+```

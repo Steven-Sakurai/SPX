@@ -31,8 +31,10 @@ get_tau <- function() {
 	return(sort(tau.set))
 } 
 
-n1 = length(get_date())
-n2 = length(get_tau())
+my_date = get_date()
+my_taus = get_tau()
+n1 = length(my_date)
+n2 = length(my_taus)
 
 get_atm_skew <- function(k = 0, method = "natural") {
 # get slope matrix (day, tau) at fixed k
@@ -99,9 +101,10 @@ by.vals <- function(x, probs = c(0.05, 0.05, 0.5, 0.95, 0.95)) {
 
 
 
-get_df_k <- function(k, method = "natural") {
+get_df_k <- function(k, method = "natural", tau_seq = get_tau()) {
     df.ret = data.frame()
-    for(thetau in get_tau()) {
+
+    for(thetau in tau_seq) {
         df.tau = df %>% filter(tau == thetau)
         date.tau = unique(df.tau[["date"]])
         df.tmp = data.frame(date = date.tau, tau = rep(thetau, length(date.tau)), level = rep(0, length(date.tau)),  slope = rep(0, length(date.tau)), convexity = rep(0, length(date.tau)))
@@ -122,55 +125,61 @@ get_df_k <- function(k, method = "natural") {
     return(df.ret)
 } 
 
-get_df_k_term_level_mat <- function(k) {
-    mydate = get_date()
-    mydf = get_df_k(k)
-    n1 = length(mydate)
-    n2 = 28
-    ret = matrix(rep(0, n1*n2), n1, n2)
+get_df_k_term_level_mat <- function(k, method = "natural", tau_seq = get_tau()) {
+# matrix [date, tau]
+    mydate = my_date
+    mydf = get_df_k(k, method, tau_seq)
+
+    n3 = length(tau_seq)
+
+    ret = matrix(rep(0, n1*n3), n1, n3)
     i = 1
     for(day in mydate) {
         df.day = mydf %>% filter(date == day)
         the.tau = df.day[['tau']]
         the.level = df.day[['level']]
-        ss = splinefun(the.tau, the.level, method = "natural")
-        level.all = ss(2:29)
+        ss = splinefun(the.tau, the.level, method = method)
+        level.all = ss(tau_seq)
         ret[i, ] = level.all
         i = i + 1
     }
     return(ret)
 }
 
-get_df_k_term_slope_mat <- function(k, tau_seq = 2:29) {
-    mydate = get_date()
-    mydf = get_df_k(k)
-    n1 = length(mydate)
-    n2 = length(tau_seq)
-    ret = matrix(rep(0, n1*n2), n1, n2)
+get_df_k_term_slope_mat <- function(k, method = "natural", tau_seq = get_tau()) {
+# matrix [date, tau]
+    mydate = my_date
+    mydf = get_df_k(k, method)
+
+    n3 = length(tau_seq)
+
+    ret = matrix(rep(0, n1*n3), n1, n3)
     i = 1
-    #day = mydate[1]
     for(day in mydate) {
         df.day = mydf %>% filter(date == day)
+
         if(nrow(df.day) == 0) {
-            ret[i, ] = rep(NA, n2)
+            ret[i, ] = rep(NA, n3)
             i = i + 1
             next
         }
+
         the.tau = df.day[['tau']]
         the.level = df.day[['level']]
-        
-        ss = splinefun(the.tau, the.level, method = "natural")
-        level.all = ss(tau_seq, deriv = 1)
+        ss = splinefun(the.tau, the.level, method = method)
+        level.all = 252 * ss(tau_seq, deriv = 1)
         ret[i, ] = level.all
         i = i + 1
     }
     return(ret)
 }
 
+
 get_sf6 <- function(t, k_seq = seq(-0.15, 0.05, 0.05)) {
-    n2 = length(k_seq)
-    n1 = length(get_date())
-    ret = matrix(rep(0, n1*n2), n1, n2)
+# return matrix(date, k)
+    len = length(k_seq)
+    ret = matrix(rep(0, n1*len), n1, len)
+    
     i = 1
     for(k in k_seq) {
         mat.k = get_df_k_term_slope_mat(k, tau_seq = c(t))
@@ -180,13 +189,12 @@ get_sf6 <- function(t, k_seq = seq(-0.15, 0.05, 0.05)) {
     return(ret)
 }
 
-get_df_smile <- function(tau_seq = (2:29)) {
-    mydate = get_date()
+get_sf7 <- function(tau_seq = get_tau()) {
+    mydate = my_date
     n1 = length(mydate)
     ret = matrix(rep(NA, 200000), 100000, 2)
     i = 1
-    #day = get_date()[1]
-    #t = 14
+
     for(day in mydate) {
         for(t in tau_seq) {
             df.day.tau = df %>% filter(date == day) %>% filter(tau == t)

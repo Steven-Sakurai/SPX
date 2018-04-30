@@ -11,22 +11,15 @@ n2 = length(my_taus)
 
 n_group = 3
 group_names = paste("group", 1:n_group)
-pivot = (1:(n_group-1))*floor(n2/n_group) 
+pivot = (1:(n_group-1))*floor(n2/n_group)
 
-i = 1
-for(p in pivot) {
-	if(i == 1) {
-		q = 0
-	}
-	else {
-		q = pivot[i-1]
-	}
-	df.3 = df.3 %>%
-		mutate(tau_group = replace(tau_group, (tau > q & tau <= p), group_names[i]))
-	i = i + 1
-}
-df.3 = df.3 %>% 
-	mutate(tau_group = replace(tau_group, tau > my_taus[pivot[length(pivot)]], group_names[length(group_names)]))
+levels = c(0, pivot, Inf)
+labels = group_names 
+df.3 %>% mutate(tau_group = cut(tau, levels, labels = labels))
+
+df.3 %>%
+    group_by(tau_group) %>%
+    summarise(correlation = cor(level, slope))
 
 p3 = df.3 %>% 
 	filter(slope < 5, slope > -7.5) %>%
